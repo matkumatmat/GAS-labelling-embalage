@@ -1,0 +1,498 @@
+<script>
+// --- GLOBAL VARIABLES (Pake var biar aman di Scope GAS) ---
+var state = {
+  items: [],
+  stock: {},
+  customers: [],
+  selectedCustId: null
+};
+
+// --- UI HELPER ---
+var ui = {
+  loading: function(show) {
+    var el = document.getElementById('loader');
+    if (show) el.classList.remove('hidden');
+    else el.classList.add('hidden');
+  },
+  toast: function(msg, type) {
+    var el = document.getElementById('toast');
+    document.getElementById('toast-msg').innerText = msg;
+    
+    // Reset classes
+    el.className = "fixed top-24 left-1/2 -translate-x-1/2 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 transition-all duration-300 z-[60] w-11/12 max-w-xs transform";
+    
+    if (type === 'error') {
+      el.classList.add('bg-rose-600', 'text-white', 'translate-y-0', 'opacity-100');
+    } else {
+      el.classList.add('bg-slate-800', 'text-white', 'translate-y-0', 'opacity-100');
+    }
+
+    setTimeout(function() {
+      el.classList.remove('translate-y-0', 'opacity-100');
+      el.classList.add('-translate-y-10', 'opacity-0');
+    }, 3000);
+  },
+  hideAppLoader: function() {
+    var el = document.getElementById('app-loading');
+    if(el) el.style.display = 'none';
+  }
+};
+
+// --- ROUTER SYSTEM ---
+var router = {
+  go: function(page) {
+    console.log("Navigating to:", page);
+    
+    // 1. Sembunyikan semua halaman
+    var pages = document.querySelectorAll('.view-section');
+    for (var i = 0; i < pages.length; i++) {
+      pages[i].classList.remove('active');
+    }
+    
+    // 2. Tampilkan halaman target
+    var target = document.getElementById('page-' + page);
+    if (target) {
+      target.classList.add('active');
+    } else {
+      console.error("Halaman tidak ditemukan: page-" + page);
+      return;
+    }
+    
+    // 3. Update Navigasi Bawah
+    var navs = document.querySelectorAll('.nav-btn');
+    for (var j = 0; j < navs.length; j++) {
+      navs[j].classList.remove('active');
+      var icon = navs[j].querySelector('i');
+      var text = navs[j].querySelector('span');
+      if(icon) icon.classList.replace('text-indigo-600', 'text-slate-400');
+      if(text) text.classList.replace('text-indigo-600', 'text-slate-400');
+    }
+    
+    var activeBtn = document.querySelector('.nav-btn[data-target="' + page + '"]');
+    if (activeBtn) {
+      activeBtn.classList.add('active');
+      var activeIcon = activeBtn.querySelector('i');
+      var activeText = activeBtn.querySelector('span');
+      if(activeIcon) activeIcon.classList.replace('text-slate-400', 'text-indigo-600');
+      if(activeText) activeText.classList.replace('text-slate-400', 'text-indigo-600');
+    }
+
+    // 4. Update Judul Header
+    var titles = {
+      'dashboard': 'Dashboard', 
+      'input': 'Input Stok', 
+      'labeling': 'Cetak Label'
+    };
+    var titleEl = document.getElementById('page-title');
+    if(titleEl) titleEl.innerText = titles[page] || 'App';
+
+    window.scrollTo(0,0);
+  }
+};
+
+// --- INITIALIZATION ---
+window.onload = function() {
+  console.log("App Starting...");
+  
+  try {
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+    
+    // Set tanggal hari ini di input form
+    var dateInput = document.getElementById('inp-date');
+    if(dateInput) dateInput.valueAsDate = new Date();
+
+    // Tarik data awal
+    fetchInitData();
+    
+  } catch (err) {
+    console.error("Init Error:", err);
+    alert("Terjadi kesalahan saat memuat aplikasi: " + err.message);
+  }
+};
+
+// --- DATA FETCHING ---
+function fetchInitData() {
+  // Jangan nyalakan loading overlay full screen, cukup progress bar atau diam-diam
+  // ui.loading(true); 
+  
+  google.script.run
+    .withSuccessHandler(function(data) {
+      console.log("Data received:", data);
+      state.items = data.items || [];
+      state.stock = data.stock || {};
+      
+      renderDashboard();
+      renderInputList();
+      
+      // Hapus loading screen awal & Masuk Dashboard
+      ui.hideAppLoader();
+      router.go('dashboard');
+      
+      // Re-init icons just in case
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    })
+    .withFailureHandler(function(err) {
+      console.error("Server Error:", err);
+      ui.hideAppLoader();
+      ui.toast("Gagal koneksi ke server GAS", "error");
+    })
+    .apiInitApp();
+}
+
+function loadCustomers() {
+  ui.loading(true);
+  google.script.run
+    .withSuccessHandler(function(data) {
+      state.customers = data;
+      renderCustomerList();
+      ui.loading(false);
+      ui.toast("Data Customer Updated");
+    })
+    .withFailureHandler(function(err) {
+      ui.loading(false);
+      ui.toast("Gagal ambil customer", "error");
+    })
+    .apiGetCustomers();
+}
+
+// --- RENDERERS ---
+function renderDashboard() {
+  var list = document.getElementById('dash-list');
+  if(!list) return;
+  
+  var html = '';
+  var lowStock = 0;
+
+  state.items.forEach(function(item) {
+    var qty = state.stock[item] || 0;
+    if(qty < 10) lowStock++; 
+
+    var colorClass = qty > 0 ? 'bg-indigo-50 text-indigo-600' : 'bg-rose-50 text-rose-600';
+
+    html += `
+      <div class="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+        <div>
+          <p class="font-bold text-sm text-slate-700">${item}</p>
+          <p class="text-xs text-slate-400">Stok Tersedia</p>
+        </div>
+        <div class="${colorClass} px-3 py-1 rounded-lg text-sm font-bold">
+          ${qty}
+        </div>
+      </div>
+    `;
+  });
+
+  var totalSkuEl = document.getElementById('dash-total-sku');
+  var lowStockEl = document.getElementById('dash-low-stock');
+  
+  if(totalSkuEl) totalSkuEl.innerText = state.items.length;
+  if(lowStockEl) lowStockEl.innerText = lowStock;
+  list.innerHTML = html;
+}
+
+function renderInputList(filter) {
+  var list = document.getElementById('input-list');
+  if(!list) return;
+  
+  var filterText = filter ? filter.toLowerCase() : "";
+  var html = '';
+  
+  var filtered = state.items.filter(function(i) {
+    return i.toLowerCase().includes(filterText);
+  });
+
+  filtered.forEach(function(item) {
+    var qty = state.stock[item] || 0;
+    // Gunakan onclick="return false" pada input agar tidak trigger event lain
+    html += `
+      <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm item-card mb-3" data-name="${item}">
+        <div class="flex justify-between items-start mb-3">
+          <span class="font-bold text-sm text-slate-800">${item}</span>
+          <span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500">Sisa: ${qty}</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-2">
+          <input type="number" class="inp-in w-full bg-emerald-50 border-transparent focus:border-emerald-300 focus:bg-white rounded-lg px-3 py-2 text-sm text-center font-bold placeholder-emerald-300/50 outline-none transition-all" placeholder="Masuk">
+          <input type="number" class="inp-out w-full bg-rose-50 border-transparent focus:border-rose-300 focus:bg-white rounded-lg px-3 py-2 text-sm text-center font-bold placeholder-rose-300/50 outline-none transition-all" placeholder="Keluar">
+        </div>
+        <input type="text" class="inp-note w-full bg-slate-50 border-none rounded-lg px-3 py-2 text-xs placeholder-slate-400 outline-none focus:ring-1 focus:ring-indigo-200" placeholder="Keterangan...">
+      </div>
+    `;
+  });
+  
+  if(filtered.length === 0) {
+    html = '<div class="text-center text-slate-400 text-xs py-10">Barang tidak ditemukan</div>';
+  }
+  
+  list.innerHTML = html;
+}
+
+function renderCustomerList(filter) {
+  var list = document.getElementById('cust-list');
+  if(!list) return;
+
+  var filterText = filter ? filter.toLowerCase() : "";
+  
+  // Filter logic: Nama, Kota, atau Cabang
+  var filtered = state.customers.filter(function(c) {
+    return (c.name && c.name.toLowerCase().includes(filterText)) || 
+           (c.branch && c.branch.toLowerCase().includes(filterText)) ||
+           (c.city && c.city.toLowerCase().includes(filterText));
+  }).slice(0, 20); 
+
+  if(filtered.length === 0) {
+    list.innerHTML = '<p class="text-center text-xs text-slate-400 mt-4">Tidak ada data (Klik Refresh)</p>';
+    return;
+  }
+
+  var html = filtered.map(function(c) {
+    var safeName = c.name.replace(/'/g, "\\'"); 
+    
+    // Logic Tampilan: Nama Cabang (Badge) + Kota & Provinsi
+    return `
+    <div onclick="openPrintModal('${c.id}', '${safeName}')" class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-colors cursor-pointer active:scale-98">
+      <div class="flex justify-between items-start">
+        <div class="w-full pr-2">
+          <p class="font-bold text-sm text-slate-800 line-clamp-1">${c.name}</p>
+          
+          <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+             <span class="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded border border-indigo-100">
+                ${c.branch || 'Pusat'}
+             </span>
+             <span class="text-[10px] text-slate-500 font-medium">
+                ${c.city || '-'}, ${c.province || ''}
+             </span>
+          </div>
+
+        </div>
+        <div class="bg-slate-50 p-2 rounded-lg text-slate-400 shrink-0">
+          <i data-lucide="printer" class="w-4 h-4"></i>
+        </div>
+      </div>
+      
+      <p class="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-50 truncate">
+        ${c.address || '-'}
+      </p>
+    </div>
+    `;
+  }).join('');
+  
+  list.innerHTML = html;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// --- ACTIONS ---
+function submitTransaction() {
+  var cards = document.querySelectorAll('.item-card');
+  var payload = [];
+  var dateEl = document.getElementById('inp-date');
+  var date = dateEl ? dateEl.value : new Date();
+
+  cards.forEach(function(card) {
+    var name = card.dataset.name;
+    var inVal = card.querySelector('.inp-in').value;
+    var outVal = card.querySelector('.inp-out').value;
+    var note = card.querySelector('.inp-note').value;
+
+    if(inVal || outVal) {
+      payload.push({ name: name, inVal: inVal, outVal: outVal, note: note });
+    }
+  });
+
+  if(payload.length === 0) return ui.toast("Isi minimal satu barang", "error");
+
+  ui.loading(true);
+  google.script.run
+    .withSuccessHandler(function(res) {
+      ui.loading(false);
+      if(res.status === 'success') {
+        ui.toast("Data Disimpan!");
+        // Reset input
+        document.querySelectorAll('input[type="number"], .inp-note').forEach(function(i) { i.value = ''; });
+        // Refresh Data
+        fetchInitData(); 
+      } else {
+        ui.toast("Error: " + res.message, "error");
+      }
+    })
+    .withFailureHandler(function(err){
+       ui.loading(false);
+       ui.toast("Gagal simpan: " + err, "error");
+    })
+    .apiSaveTransaction(JSON.stringify({ date: date, items: payload }));
+}
+
+function filterCustomers(val) { renderCustomerList(val); }
+
+// --- MODAL LOGIC ---
+function openPrintModal(id, name) {
+  state.selectedCustId = id;
+  document.getElementById('modal-cust-name').innerText = name;
+  document.getElementById('print-qty').value = 1;
+  document.getElementById('modal-print').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('modal-print').classList.add('hidden');
+}
+
+function adjustQty(val) {
+  var el = document.getElementById('print-qty');
+  var current = parseInt(el.value) || 1;
+  current += val;
+  if(current < 1) current = 1;
+  el.value = current;
+}
+
+function executePrint() {
+  if(!state.selectedCustId) return;
+  var qty = document.getElementById('print-qty').value;
+  
+  closeModal();
+  ui.loading(true);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      ui.loading(false);
+      if(res.status === 'success') {
+        ui.toast("Perintah cetak dikirim!");
+      } else {
+        alert(res.message); 
+      }
+    })
+    .withFailureHandler(function(err){
+       ui.loading(false);
+       alert("Error Print: " + err);
+    })
+    .apiPrintLabel(state.selectedCustId, qty);
+}
+
+// --- TAB SWITCHER ---
+function switchLabelTab(tab) {
+  const btnNew = document.getElementById('tab-btn-new');
+  const btnHist = document.getElementById('tab-btn-history');
+  const contentNew = document.getElementById('tab-content-new');
+  const contentHist = document.getElementById('tab-content-history');
+
+  if (tab === 'new') {
+    btnNew.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-white shadow-sm text-indigo-600 transition-all";
+    btnHist.className = "flex-1 py-2 text-xs font-bold rounded-lg text-slate-500 transition-all";
+    contentNew.classList.remove('hidden');
+    contentHist.classList.add('hidden');
+  } else {
+    btnNew.className = "flex-1 py-2 text-xs font-bold rounded-lg text-slate-500 transition-all";
+    btnHist.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-white shadow-sm text-indigo-600 transition-all";
+    contentNew.classList.add('hidden');
+    contentHist.classList.remove('hidden');
+    loadQueueHistory(); // Auto load pas buka tab
+  }
+}
+
+// --- QUEUE HISTORY LOGIC ---
+function loadQueueHistory() {
+  const list = document.getElementById('queue-list');
+  list.innerHTML = '<div class="text-center text-xs text-slate-400 py-10">Updating...</div>';
+  
+  google.script.run.withSuccessHandler(data => {
+    if(data.length === 0) {
+      list.innerHTML = '<div class="text-center text-xs text-slate-400 py-10">Belum ada riwayat</div>';
+      return;
+    }
+
+    list.innerHTML = data.map(job => `
+      <div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center">
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">${job.date}</span>
+            ${getStatusBadge(job.status)}
+          </div>
+          <p class="font-bold text-sm text-slate-800 line-clamp-1">${job.name}</p>
+          <p class="text-[10px] text-slate-400">${job.qty} Box • ${job.branch || '-'}</p>
+        </div>
+        <button onclick='reprintJob(${JSON.stringify(job)})' class="ml-2 p-2 bg-indigo-50 text-indigo-600 rounded-lg active:scale-95">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        </button>
+      </div>
+    `).join('');
+    lucide.createIcons();
+  }).apiGetQueueList();
+}
+
+function getStatusBadge(status) {
+  if(status === 'PRINTED') return '<span class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">DONE</span>';
+  if(status === 'PENDING') return '<span class="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">WAIT</span>';
+  return '<span class="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">ERR</span>';
+}
+
+// --- PROCESS LABEL (NEW & REPRINT) ---
+
+// Ini dipanggil dari Modal (Create New)
+function processLabel(mode) {
+  if(!state.selectedCustId) return;
+  
+  // Cari data customer lengkap dari state
+  const cust = state.customers.find(c => c.id == state.selectedCustId);
+  const qty = document.getElementById('print-qty').value;
+  
+  const payload = {
+    name: cust.name,
+    address: cust.address,
+    branch: cust.branch,
+    qty: qty
+  };
+
+  closeModal();
+  ui.loading(true);
+
+  if (mode === 'queue') {
+    // 1. Simpan ke Queue Saja
+    google.script.run.withSuccessHandler(res => {
+      ui.loading(false);
+      ui.toast(res.message);
+      // Pindah ke tab history biar user liat
+      switchLabelTab('history'); 
+    }).apiAddToQueue(JSON.stringify(payload));
+
+  } else {
+    // 2. Direct Print (Simpan & Print)
+    google.script.run.withSuccessHandler(res => {
+      ui.loading(false);
+      if(res.status === 'success') {
+        ui.toast("Printing...");
+        switchLabelTab('history'); // Refresh list
+      } else {
+        alert(res.message);
+      }
+    }).apiExecutePrint(JSON.stringify(payload));
+  }
+}
+
+// Ini dipanggil dari tombol kecil di list History
+function reprintJob(jobData) {
+  const confirm = window.confirm(`Print ulang label untuk ${jobData.name}?`);
+  if(!confirm) return;
+
+  ui.loading(true);
+  
+  // Payload khusus reprint (ada jobId)
+  const payload = {
+    jobId: jobData.id, 
+    name: jobData.name,
+    address: jobData.address,
+    branch: jobData.branch,
+    qty: jobData.qty
+  };
+
+  google.script.run.withSuccessHandler(res => {
+    ui.loading(false);
+    if(res.status === 'success') {
+      ui.toast("Reprinting...");
+      loadQueueHistory(); // Refresh status jadi update
+    } else {
+      alert(res.message);
+    }
+  }).apiExecutePrint(JSON.stringify(payload));
+}
+</script>
+
