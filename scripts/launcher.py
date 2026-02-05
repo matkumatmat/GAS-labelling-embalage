@@ -7,7 +7,7 @@ import os
 import threading
 
 # --- CONFIG (GANTI INI) ---
-GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyMJNk7XHD-AmKJEwvyCLiCXBuSkN30yN1BmO4iYm3RpyUmGsimfzC09niz5SX0rWging/exec"
+GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyDTZAd1scdvbyiVGNVM6eokc1lhw8NfY6aEYASFC9lbEbtey9jKIBzRM5rrH4DzLWzBA/exec"
 # --------------------------
 
 def update_gas_config(tunnel_url):
