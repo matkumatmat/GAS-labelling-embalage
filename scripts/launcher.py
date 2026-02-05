@@ -7,7 +7,7 @@ import os
 import threading
 
 # --- CONFIG (GANTI INI) ---
-GAS_WEBAPP_URL = "https://script.google.com/macros/s/GANTI_ID_SCRIPT_LO_DISINI/exec"
+GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyMJNk7XHD-AmKJEwvyCLiCXBuSkN30yN1BmO4iYm3RpyUmGsimfzC09niz5SX0rWging/exec"
 # --------------------------
 
 def update_gas_config(tunnel_url):
@@ -33,7 +33,7 @@ def start_backend():
     """Jalanin Server Python"""
     print("[SYSTEM] Menyalakan Backend Server...")
     # Pake sys.executable biar pasti pake python dari venv yang sama
-    subprocess.run([sys.executable, "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"])
+    subprocess.run([sys.executable, "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"])
 
 def start_tunnel():
     """Jalanin Cloudflare Tunnel"""
@@ -42,7 +42,7 @@ def start_tunnel():
     cmd = "cloudflared.exe" if os.path.exists("cloudflared.exe") else "cloudflared"
         
     process = subprocess.Popen(
-        [cmd, "tunnel", "--url", "http://localhost:8000"],
+        [cmd, "tunnel", "--url", "http://localhost:8080"],
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
