@@ -11,6 +11,7 @@ logger = structlog.get_logger()
 async def direct_print_endpoint(payload: DirectPrintRequest):
     # Log event spesifik (source dari payload)
     logger.info("proxy_request_received", source=payload.source, printer_id=payload.printer_id)
+    logger.info("checking_zpl_content", zpl_preview=payload.raw_zpl[:100]) # Liat 100 huruf awal    
     
     result = await service.handle_direct_print(payload)
     
